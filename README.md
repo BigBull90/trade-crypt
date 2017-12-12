@@ -1,2 +1,2 @@
 # trade-crypt
-Simple python script to trade crpyptocurrency on koinex.
+Simple python script to trade cryptocurrency on koinex.
