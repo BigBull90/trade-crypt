@@ -5,6 +5,7 @@ from pathlib import Path
 import curses
 import os
 import time
+import matplotlib.pyplot as plt
 
 certFile = 'Cyberoam_SSL_CA.cert'
 
@@ -13,15 +14,26 @@ class koinexTrader:
 
     koinexTickerURL = "https://koinex.in/api/ticker"
     tickerData = {}
+    priceHistory = {
+        'timestamp': [],
+        'BTC': [],
+        'ETH': [],
+        'XRP': [],
+        'LTC': [],
+        'BCH': [],
+        'MIOTA': [],
+        'GNT': [],
+        'OMG': []
+    }
 
     def __init__(self):
         self.personalAssets = {
                 'BTC': 0.01000024,
                 'ETH': 0.00,
-                'XRP': 0.00,
+                'XRP': 110.00,
                 'LTC': 0.41,
                 'BCH': 0.00,
-                'INR': 53.20
+                'INR': 90.82
         }
 
         self.lastTradePrice = {
@@ -35,6 +47,10 @@ class koinexTrader:
         self.balances = {}
         self.lastUpdateTime = 0
         self.updateInterval = 30
+        self.plotting = False
+        self.plotData = False
+        self.fig = False
+        self.ax = False
 
         self.stdscr = curses.initscr()
         curses.noecho()
@@ -46,7 +62,7 @@ class koinexTrader:
 
             try:
                 if Path(certFile).is_file():
-                    self.tickerData = json.loads(urllib.request.urlopen(self.koinexTickerURL, cafile='Cyberoam_SSL_CA.cert').read())
+                    self.tickerData = json.loads(urllib.request.urlopen(self.koinexTickerURL, cafile=certFile).read())
                 else:
                     self.tickerData = json.loads(urllib.request.urlopen(self.koinexTickerURL).read())
             except urllib.error.HTTPError:
@@ -60,34 +76,28 @@ class koinexTrader:
                     self.tickerData['stats'][curr][key] = float(self.tickerData['stats'][curr][key])
 
             self.lastUpdateTime = time.time()
+            self.recordHistory()
+            if self.plotting != False:
+                #self.refreshPlot()
+                pass
+
             return 1
 
         else:
             return 0
 
+    def recordHistory(self):
+        self.priceHistory['timestamp'].append(self.lastUpdateTime)
+
+        for key in self.tickerData['prices']:
+            self.priceHistory[key].append(self.tickerData['prices'][key])
+
     def updatePersonalAssets(self):
         pass
 
-    def computeBalances(self, currency='INR'):
-        self.balances = {'TOT': 0.00}
-        conversionFactor = 1
-
-        if currency != 'INR':
-            conversionFactor = 1.00/self.tickerData['prices'][currency]
-
-        for key in self.personalAssets.keys():
-            if key == 'INR':
-                self.balances[key] = [self.personalAssets['INR'], self.personalAssets['INR'] * conversionFactor]
-            else:
-                self.balances[key] = [self.personalAssets[key], self.tickerData['prices'][key] * self.personalAssets[key] * conversionFactor]
-
-            self.balances['TOT'] += self.balances[key][1]
-
-        return self.balances
-    
     def automaticTrader(self, currency):
         # SELL
-        if self.balances['BTC'][0] > 0:
+        if self.personalAssets['BTC'] > 0:
             if (self.tickerData['prices'][currency] >= self.tickerData['stats'][currency]['max_24hrs']) and \
                 (((self.tickerData['prices'][currency] - self.lastTradePrice[currency])/self.tickerData['prices'][currency])*100 > 2):
                     with open('trade-log-2.txt', 'a') as logFile:
@@ -97,7 +107,7 @@ class koinexTrader:
                     self.balances['BTC'] = 0.00
 
         # BUY
-        if self.balances['INR'][0] > 0:
+        if self.personalAssets['INR'] > 0:
             if (self.tickerData['prices'][currency] <= self.tickerData['stats'][currency]['min_24hrs']*1.1) and \
                 (((self.lastTradePrice[currency] - self.tickerData['prices'][currency])/self.lastTradePrice[currency])*100 > 2):
                     self.balances['BTC'] += (self.balances['INR'] - self.balances['INR']*0.0025) / self.tickerData['prices'][currency]
@@ -110,7 +120,7 @@ class koinexTrader:
         self.updateInterval = updateInterval
 
         while self.getDataFromKoinexTicker() != 1:
-            sleep(1)
+            time.sleep(1)
 
         self.lastTradePrice = self.tickerData['prices']
 
@@ -119,27 +129,53 @@ class koinexTrader:
                 self.stdscr.addstr(13, 0, "{:<50}".format("Ticker not working. Retrying ..."))
             else:
                 self.stdscr.addstr(13, 0, "{:<50}".format("Ticker Updated Successfully."))
-                self.computeBalances('INR')
                 self.automaticTrader('BTC')
 
             self.printBalances('INR')
             time.sleep(1)
 
-    def printBalances(self, currency):
-        self.stdscr.addstr(0, 0, '{:>6} |{:>15} |{:>15}'.format('CUR', 'Native', currency))
-        self.stdscr.addstr(1, 0, '{:->40}'.format(''))
+    def printBalances(self, currency='INR'):
+        totalBalance = 0
+        conversionFactor = 1
+        if currency != 'INR':
+            conversionFactor = 1.00/self.tickerData['prices'][currency]
+
+        self.stdscr.addstr(0, 0, '{:>6} |{:>15} |{:>15} |{:>15}'.format('CUR', 'Balance', 'Rate', currency))
+        self.stdscr.addstr(1, 0, '{:->57}'.format(''))
         
         for index, key in enumerate(['BTC', 'LTC', 'ETH', 'XRP', 'BCH', 'INR']):
-            self.stdscr.addstr(index + 2, 0, '{:>6} |{:15.8f} |{:15.8f}'.format(key, self.balances[key][0], self.balances[key][1]))
+            rate = (1 if (key=='INR') else self.tickerData['prices'][key]) * conversionFactor
+            balance = self.personalAssets[key] * rate
+            totalBalance += balance
+            self.stdscr.addstr(index + 2, 0, '{:>6} |{:15.8f} |{:15.2f} |{:15.5f}'.format(key, self.personalAssets[key], rate, balance))
 
-        self.stdscr.addstr(8, 0, '{:->40}'.format(''))
-        self.stdscr.addstr(9, 0, '{:>6} |{:>15} |{:>15.8f}'.format('Total', '', self.balances['TOT']))
+        self.stdscr.addstr(8, 0, '{:->57}'.format(''))
+        self.stdscr.addstr(9, 0, '{:>6} |{:>15} |{:>15} |{:>15.5f}'.format('Total', '', '', totalBalance))
         self.stdscr.addstr(11, 0, 'Reupdating balances in %d seconds ...' % (self.updateInterval - (time.time() - self.lastUpdateTime)))
         self.stdscr.refresh()
+
+    def initPlot(self, currency):
+        self.plotting = currency
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        #self.plotData, = self.ax.plot(self.priceHistory['timestamp'], self.priceHistory[currency])
+        self.plotData, = self.ax.plot([1,2,3],[1,2,3])
+        self.fig.canvas.draw()
+        plt.show(block=False)
+
+    def refreshPlot(self):
+        self.plotData.set_xdata(self.priceHistory['timestamp'])
+        self.plotData.set_ydata(self.priceHistory[self.plotting])
+
+        self.ax.relim()
+        self.ax.autoscale_view(True, True, True)
+
+        self.fig.canvas.draw()
 
 if __name__ == '__main__':
     try:
         trader = koinexTrader()
+        trader.initPlot('BTC')
         trader.autoTrade(30)
 
         while True:
