@@ -90,7 +90,7 @@ class koinexTrader:
         if self.balances['BTC'][0] > 0:
             if (self.tickerData['prices'][currency] >= self.tickerData['stats'][currency]['max_24hrs']) and \
                 (((self.tickerData['prices'][currency] - self.lastTradePrice[currency])/self.tickerData['prices'][currency])*100 > 2):
-                    with open('trade-log.txt', 'a') as logFile:
+                    with open('trade-log-2.txt', 'a') as logFile:
                         logFile.write("Sold {:15.8f} BTC at the rate of {:15.2f} per BTC.\n".format(self.balances['BTC'], self.tickerData['prices'][currency]))
 
                     self.balances['INR'] += self.tickerData['prices'][currency] * self.balances['BTC']
@@ -103,7 +103,7 @@ class koinexTrader:
                     self.balances['BTC'] += (self.balances['INR'] - self.balances['INR']*0.0025) / self.tickerData['prices'][currency]
                     self.balances['INR'] = 0.00
                     
-                    with open('trade-log.txt', 'a') as logFile:
+                    with open('trade-log-2.txt', 'a') as logFile:
                         logFile.write("Bought {:15.8f} BTC at the rate of {:15.2f} per BTC.\n".format(self.balances['BTC'], self.tickerData['prices'][currency]))
 
     def autoTrade(self, updateInterval=30):
